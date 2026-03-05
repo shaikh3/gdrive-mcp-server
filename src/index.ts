@@ -2,6 +2,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,6 +11,8 @@ import {
 import { google, drive_v3, docs_v1, sheets_v4 } from 'googleapis';
 import { z } from 'zod';
 import { readFileSync } from 'fs';
+import express from 'express';
+import cors from 'cors';
 
 // Auth setup
 function getAuth() {
@@ -541,6 +544,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Start server
-const transport = new StdioServerTransport();
-server.connect(transport).catch(console.error);
+// Start server - supports both stdio (desktop) and HTTP/SSE (browser)
+const mode = process.env.MCP_TRANSPORT || 'stdio';
+
+if (mode === 'http' || mode === 'sse') {
+  // HTTP/SSE mode for Claude browser
+  const app = express();
+  app.use(cors());
+  
+  const transports: Map<string, SSEServerTransport> = new Map();
+  
+  app.get('/sse', async (req, res) => {
+    const transport = new SSEServerTransport('/message', res);
+    const sessionId = transport.sessionId;
+    transports.set(sessionId, transport);
+    
+    res.on('close', () => {
+      transports.delete(sessionId);
+    });
+    
+    await server.connect(transport);
+  });
+  
+  app.post('/message', async (req, res) => {
+    const sessionId = req.query.sessionId as string;
+    const transport = transports.get(sessionId);
+    if (transport) {
+      await transport.handlePostMessage(req, res);
+    } else {
+      res.status(400).send('Invalid session ID');
+    }
+  });
+  
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`GDrive MCP server running on http://localhost:${PORT}`);
+    console.log(`SSE endpoint: http://localhost:${PORT}/sse`);
+  });
+} else {
+  // Stdio mode for Claude Desktop
+  const transport = new StdioServerTransport();
+  server.connect(transport).catch(console.error);
+}
