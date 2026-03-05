@@ -1,0 +1,28 @@
+{
+  "name": "@shaikh3/gdrive-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Google Drive operations - read/write docs, sheets, and files",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "gdrive-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "keywords": ["mcp", "google-drive", "claude", "google-docs", "google-sheets"],
+  "author": "shaikh3",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "googleapis": "^144.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
