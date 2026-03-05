@@ -22,10 +22,10 @@ let sheets: any;
 
 function initAuth() {
   if (auth) return;
-  
+
   const keyContent = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
-  
+
   if (keyContent) {
     try {
       const key = JSON.parse(keyContent);
@@ -52,7 +52,7 @@ function initAuth() {
   } else {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY or GOOGLE_SERVICE_ACCOUNT_PATH required');
   }
-  
+
   drive = google.drive({ version: 'v3', auth });
   docs = google.docs({ version: 'v1', auth });
   sheets = google.sheets({ version: 'v4', auth });
@@ -184,8 +184,8 @@ const TOOLS: Tool[] = [
       properties: {
         spreadsheetId: { type: 'string', description: 'Spreadsheet ID' },
         range: { type: 'string', description: 'Range like "Sheet1!A1"' },
-        values: { 
-          type: 'array', 
+        values: {
+          type: 'array',
           items: { type: 'array', items: { type: 'string' } },
           description: '2D array of values'
         },
@@ -201,8 +201,8 @@ const TOOLS: Tool[] = [
       properties: {
         spreadsheetId: { type: 'string', description: 'Spreadsheet ID' },
         sheetName: { type: 'string', description: 'Sheet name' },
-        values: { 
-          type: 'array', 
+        values: {
+          type: 'array',
           items: { type: 'array', items: { type: 'string' } },
           description: '2D array of rows to append'
         },
@@ -262,13 +262,13 @@ const TOOLS: Tool[] = [
 async function handleDocRead(args: any) {
   initAuth();
   const { fileId, format } = DocReadSchema.parse(args);
-  
+
   // Export the document
   const mimeType = format === 'html' ? 'text/html' : 'text/plain';
   const response = await drive.files.export({ fileId, mimeType });
-  
+
   let content = response.data as string;
-  
+
   // Simple HTML to Markdown conversion for text format
   if (format === 'markdown') {
     // Basic conversion - strip HTML tags for now, could be enhanced
@@ -281,7 +281,7 @@ async function handleDocRead(args: any) {
       .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
       .replace(/<[^>]+>/g, ''); // Strip remaining tags
   }
-  
+
   return {
     content: [{ type: 'text', text: content }],
   };
@@ -290,14 +290,14 @@ async function handleDocRead(args: any) {
 async function handleDocCreate(args: any) {
   initAuth();
   const { title, folderId, content } = DocCreateSchema.parse(args);
-  
+
   // Create document
   const doc = await docs.documents.create({
     requestBody: { title },
   });
-  
+
   const fileId = doc.data.documentId!;
-  
+
   // Add content if provided
   if (content) {
     await docs.documents.batchUpdate({
@@ -312,7 +312,7 @@ async function handleDocCreate(args: any) {
       },
     });
   }
-  
+
   // Move to folder if specified
   if (folderId) {
     await drive.files.update({
@@ -321,11 +321,11 @@ async function handleDocCreate(args: any) {
       fields: 'id, parents',
     });
   }
-  
+
   return {
-    content: [{ 
-      type: 'text', 
-      text: `Created document: ${title}\nID: ${fileId}\nURL: https://docs.google.com/document/d/${fileId}/edit` 
+    content: [{
+      type: 'text',
+      text: `Created document: ${title}\nID: ${fileId}\nURL: https://docs.google.com/document/d/${fileId}/edit`
     }],
   };
 }
@@ -333,12 +333,12 @@ async function handleDocCreate(args: any) {
 async function handleDocWrite(args: any) {
   initAuth();
   const { fileId, content, mode } = DocWriteSchema.parse(args);
-  
+
   if (mode === 'replace') {
     // Get current document to find end index
     const doc = await docs.documents.get({ documentId: fileId });
     const endIndex = doc.data.body?.content?.at(-1)?.endIndex || 2;
-    
+
     // Delete existing content
     if (endIndex > 2) {
       await docs.documents.batchUpdate({
@@ -352,7 +352,7 @@ async function handleDocWrite(args: any) {
         },
       });
     }
-    
+
     // Insert new content
     await docs.documents.batchUpdate({
       documentId: fileId,
@@ -369,7 +369,7 @@ async function handleDocWrite(args: any) {
     // Append mode
     const doc = await docs.documents.get({ documentId: fileId });
     const endIndex = doc.data.body?.content?.at(-1)?.endIndex || 1;
-    
+
     await docs.documents.batchUpdate({
       documentId: fileId,
       requestBody: {
@@ -382,7 +382,7 @@ async function handleDocWrite(args: any) {
       },
     });
   }
-  
+
   return {
     content: [{ type: 'text', text: `Document ${mode === 'replace' ? 'updated' : 'appended'} successfully` }],
   };
@@ -391,15 +391,15 @@ async function handleDocWrite(args: any) {
 async function handleSheetRead(args: any) {
   initAuth();
   const { spreadsheetId, range } = SheetReadSchema.parse(args);
-  
+
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
   });
-  
+
   const values = response.data.values || [];
   const csv = values.map((row: any[]) => row.join(',')).join('\n');
-  
+
   return {
     content: [{ type: 'text', text: csv }],
   };
@@ -408,14 +408,14 @@ async function handleSheetRead(args: any) {
 async function handleSheetWrite(args: any) {
   initAuth();
   const { spreadsheetId, range, values } = SheetWriteSchema.parse(args);
-  
+
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values },
   });
-  
+
   return {
     content: [{ type: 'text', text: `Updated range ${range} with ${values.length} rows` }],
   };
@@ -424,7 +424,7 @@ async function handleSheetWrite(args: any) {
 async function handleSheetAppend(args: any) {
   initAuth();
   const { spreadsheetId, sheetName, values } = SheetAppendSchema.parse(args);
-  
+
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${sheetName}!A1`,
@@ -432,7 +432,7 @@ async function handleSheetAppend(args: any) {
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values },
   });
-  
+
   return {
     content: [{ type: 'text', text: `Appended ${values.length} rows to ${sheetName}` }],
   };
@@ -441,7 +441,7 @@ async function handleSheetAppend(args: any) {
 async function handleFolderCreate(args: any) {
   initAuth();
   const { name, parentId } = FolderCreateSchema.parse(args);
-  
+
   const response = await drive.files.create({
     requestBody: {
       name,
@@ -450,11 +450,11 @@ async function handleFolderCreate(args: any) {
     },
     fields: 'id, name, webViewLink',
   });
-  
+
   return {
-    content: [{ 
-      type: 'text', 
-      text: `Created folder: ${response.data.name}\nID: ${response.data.id}\nURL: ${response.data.webViewLink}` 
+    content: [{
+      type: 'text',
+      text: `Created folder: ${response.data.name}\nID: ${response.data.id}\nURL: ${response.data.webViewLink}`
     }],
   };
 }
@@ -462,19 +462,19 @@ async function handleFolderCreate(args: any) {
 async function handleFolderList(args: any) {
   initAuth();
   const { folderId, pageSize } = FolderListSchema.parse(args);
-  
+
   const response = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
     pageSize,
     fields: 'files(id, name, mimeType, modifiedTime, webViewLink)',
   });
-  
+
   const files = response.data.files || [];
   const list = files.map((f: any) => {
     const type = f.mimeType === 'application/vnd.google-apps.folder' ? '📁' : '📄';
     return `${type} ${f.name} (${f.id})`;
   }).join('\n');
-  
+
   return {
     content: [{ type: 'text', text: list || 'Folder is empty' }],
   };
@@ -483,19 +483,19 @@ async function handleFolderList(args: any) {
 async function handleSearch(args: any) {
   initAuth();
   const { query, pageSize } = SearchSchema.parse(args);
-  
+
   const response = await drive.files.list({
     q: query,
     pageSize,
     fields: 'files(id, name, mimeType, modifiedTime, webViewLink)',
   });
-  
+
   const files = response.data.files || [];
   const list = files.map((f: any) => {
     const type = f.mimeType === 'application/vnd.google-apps.folder' ? '📁' : '📄';
     return `${type} ${f.name}\n   ID: ${f.id}\n   URL: ${f.webViewLink}`;
   }).join('\n\n');
-  
+
   return {
     content: [{ type: 'text', text: list || 'No files found' }],
   };
@@ -504,12 +504,12 @@ async function handleSearch(args: any) {
 async function handleFileDelete(args: any) {
   initAuth();
   const { fileId } = FileDeleteSchema.parse(args);
-  
+
   await drive.files.update({
     fileId,
     requestBody: { trashed: true },
   });
-  
+
   return {
     content: [{ type: 'text', text: `File moved to trash: ${fileId}` }],
   };
@@ -569,21 +569,27 @@ if (mode === 'http' || mode === 'sse') {
   // HTTP/SSE mode for Claude browser
   const app = express();
   app.use(cors());
-  
+  app.use(express.json());
+
   const transports: Map<string, SSEServerTransport> = new Map();
-  
+
+  // Health check endpoint
+  app.get('/', (req, res) => {
+    res.json({ status: 'ok', server: 'gdrive-mcp-server', version: '1.0.0' });
+  });
+
   app.get('/sse', async (req, res) => {
     const transport = new SSEServerTransport('/message', res);
     const sessionId = transport.sessionId;
     transports.set(sessionId, transport);
-    
+
     res.on('close', () => {
       transports.delete(sessionId);
     });
-    
+
     await server.connect(transport);
   });
-  
+
   app.post('/message', async (req, res) => {
     const sessionId = req.query.sessionId as string;
     const transport = transports.get(sessionId);
@@ -593,7 +599,7 @@ if (mode === 'http' || mode === 'sse') {
       res.status(400).send('Invalid session ID');
     }
   });
-  
+
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`GDrive MCP server running on http://localhost:${PORT}`);
