@@ -14,25 +14,34 @@ import { readFileSync } from 'fs';
 import express from 'express';
 import cors from 'cors';
 
-// Auth setup
-function getAuth() {
+// Auth setup - lazy initialization
+let auth: any;
+let drive: any;
+let docs: any;
+let sheets: any;
+
+function initAuth() {
+  if (auth) return;
+  
   const keyContent = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
   
   if (keyContent) {
-    const key = JSON.parse(keyContent);
-    return new google.auth.GoogleAuth({
-      credentials: key,
-      scopes: [
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/documents',
-        'https://www.googleapis.com/auth/spreadsheets',
-      ],
-    });
-  }
-  
-  if (keyPath) {
-    return new google.auth.GoogleAuth({
+    try {
+      const key = JSON.parse(keyContent);
+      auth = new google.auth.GoogleAuth({
+        credentials: key,
+        scopes: [
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/documents',
+          'https://www.googleapis.com/auth/spreadsheets',
+        ],
+      });
+    } catch (e) {
+      throw new Error('Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY: ' + (e as Error).message);
+    }
+  } else if (keyPath) {
+    auth = new google.auth.GoogleAuth({
       keyFile: keyPath,
       scopes: [
         'https://www.googleapis.com/auth/drive',
@@ -40,15 +49,14 @@ function getAuth() {
         'https://www.googleapis.com/auth/spreadsheets',
       ],
     });
+  } else {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY or GOOGLE_SERVICE_ACCOUNT_PATH required');
   }
   
-  throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY or GOOGLE_SERVICE_ACCOUNT_PATH required');
+  drive = google.drive({ version: 'v3', auth });
+  docs = google.docs({ version: 'v1', auth });
+  sheets = google.sheets({ version: 'v4', auth });
 }
-
-const auth = getAuth();
-const drive = google.drive({ version: 'v3', auth });
-const docs = google.docs({ version: 'v1', auth });
-const sheets = google.sheets({ version: 'v4', auth });
 
 // Tool schemas
 const DocReadSchema = z.object({
@@ -251,7 +259,8 @@ const TOOLS: Tool[] = [
 ];
 
 // Tool handlers
-async function handleDocRead(args: z.infer<typeof DocReadSchema>) {
+async function handleDocRead(args: any) {
+  initAuth();
   const { fileId, format } = DocReadSchema.parse(args);
   
   // Export the document
@@ -278,7 +287,8 @@ async function handleDocRead(args: z.infer<typeof DocReadSchema>) {
   };
 }
 
-async function handleDocCreate(args: z.infer<typeof DocCreateSchema>) {
+async function handleDocCreate(args: any) {
+  initAuth();
   const { title, folderId, content } = DocCreateSchema.parse(args);
   
   // Create document
@@ -320,7 +330,8 @@ async function handleDocCreate(args: z.infer<typeof DocCreateSchema>) {
   };
 }
 
-async function handleDocWrite(args: z.infer<typeof DocWriteSchema>) {
+async function handleDocWrite(args: any) {
+  initAuth();
   const { fileId, content, mode } = DocWriteSchema.parse(args);
   
   if (mode === 'replace') {
@@ -377,7 +388,8 @@ async function handleDocWrite(args: z.infer<typeof DocWriteSchema>) {
   };
 }
 
-async function handleSheetRead(args: z.infer<typeof SheetReadSchema>) {
+async function handleSheetRead(args: any) {
+  initAuth();
   const { spreadsheetId, range } = SheetReadSchema.parse(args);
   
   const response = await sheets.spreadsheets.values.get({
@@ -386,14 +398,15 @@ async function handleSheetRead(args: z.infer<typeof SheetReadSchema>) {
   });
   
   const values = response.data.values || [];
-  const csv = values.map(row => row.join(',')).join('\n');
+  const csv = values.map((row: any[]) => row.join(',')).join('\n');
   
   return {
     content: [{ type: 'text', text: csv }],
   };
 }
 
-async function handleSheetWrite(args: z.infer<typeof SheetWriteSchema>) {
+async function handleSheetWrite(args: any) {
+  initAuth();
   const { spreadsheetId, range, values } = SheetWriteSchema.parse(args);
   
   await sheets.spreadsheets.values.update({
@@ -408,7 +421,8 @@ async function handleSheetWrite(args: z.infer<typeof SheetWriteSchema>) {
   };
 }
 
-async function handleSheetAppend(args: z.infer<typeof SheetAppendSchema>) {
+async function handleSheetAppend(args: any) {
+  initAuth();
   const { spreadsheetId, sheetName, values } = SheetAppendSchema.parse(args);
   
   await sheets.spreadsheets.values.append({
@@ -424,7 +438,8 @@ async function handleSheetAppend(args: z.infer<typeof SheetAppendSchema>) {
   };
 }
 
-async function handleFolderCreate(args: z.infer<typeof FolderCreateSchema>) {
+async function handleFolderCreate(args: any) {
+  initAuth();
   const { name, parentId } = FolderCreateSchema.parse(args);
   
   const response = await drive.files.create({
@@ -444,7 +459,8 @@ async function handleFolderCreate(args: z.infer<typeof FolderCreateSchema>) {
   };
 }
 
-async function handleFolderList(args: z.infer<typeof FolderListSchema>) {
+async function handleFolderList(args: any) {
+  initAuth();
   const { folderId, pageSize } = FolderListSchema.parse(args);
   
   const response = await drive.files.list({
@@ -454,7 +470,7 @@ async function handleFolderList(args: z.infer<typeof FolderListSchema>) {
   });
   
   const files = response.data.files || [];
-  const list = files.map(f => {
+  const list = files.map((f: any) => {
     const type = f.mimeType === 'application/vnd.google-apps.folder' ? '📁' : '📄';
     return `${type} ${f.name} (${f.id})`;
   }).join('\n');
@@ -464,7 +480,8 @@ async function handleFolderList(args: z.infer<typeof FolderListSchema>) {
   };
 }
 
-async function handleSearch(args: z.infer<typeof SearchSchema>) {
+async function handleSearch(args: any) {
+  initAuth();
   const { query, pageSize } = SearchSchema.parse(args);
   
   const response = await drive.files.list({
@@ -474,7 +491,7 @@ async function handleSearch(args: z.infer<typeof SearchSchema>) {
   });
   
   const files = response.data.files || [];
-  const list = files.map(f => {
+  const list = files.map((f: any) => {
     const type = f.mimeType === 'application/vnd.google-apps.folder' ? '📁' : '📄';
     return `${type} ${f.name}\n   ID: ${f.id}\n   URL: ${f.webViewLink}`;
   }).join('\n\n');
@@ -484,7 +501,8 @@ async function handleSearch(args: z.infer<typeof SearchSchema>) {
   };
 }
 
-async function handleFileDelete(args: z.infer<typeof FileDeleteSchema>) {
+async function handleFileDelete(args: any) {
+  initAuth();
   const { fileId } = FileDeleteSchema.parse(args);
   
   await drive.files.update({
@@ -509,29 +527,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  
+
   try {
     switch (name) {
       case 'gdrive_doc_read':
-        return await handleDocRead(args);
+        return await handleDocRead(args as any);
       case 'gdrive_doc_write':
-        return await handleDocWrite(args);
+        return await handleDocWrite(args as any);
       case 'gdrive_doc_create':
-        return await handleDocCreate(args);
+        return await handleDocCreate(args as any);
       case 'gdrive_sheet_read':
-        return await handleSheetRead(args);
+        return await handleSheetRead(args as any);
       case 'gdrive_sheet_write':
-        return await handleSheetWrite(args);
+        return await handleSheetWrite(args as any);
       case 'gdrive_sheet_append':
-        return await handleSheetAppend(args);
+        return await handleSheetAppend(args as any);
       case 'gdrive_folder_create':
-        return await handleFolderCreate(args);
+        return await handleFolderCreate(args as any);
       case 'gdrive_folder_list':
-        return await handleFolderList(args);
+        return await handleFolderList(args as any);
       case 'gdrive_search':
-        return await handleSearch(args);
+        return await handleSearch(args as any);
       case 'gdrive_file_delete':
-        return await handleFileDelete(args);
+        return await handleFileDelete(args as any);
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
